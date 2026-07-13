@@ -1,0 +1,26 @@
+{
+  "name": "मनmate — Mental Health Support",
+  "short_name": "मनmate",
+  "description": "Confidential mental health support in Hindi and English, 24/7.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#506B5A",
+  "background_color": "#F5F1E8",
+  "categories": ["health", "medical"],
+  "lang": "hi",
+  "icons": [
+    {
+      "src": "/logo-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

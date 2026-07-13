@@ -1,0 +1,47 @@
+# StressReliefChat - Project Dependencies
+# Note: This is a Node.js project. Dependencies are natively managed via package.json and npm.
+# This requirements.txt file is provided for reference or deployment scripts that expect it.
+
+# --------------------------------------------------------------------------------
+# BACKEND DEPENDENCIES (from backend/package.json)
+# --------------------------------------------------------------------------------
+axios>=1.13.5
+bcryptjs>=3.0.3
+cors>=2.8.5
+dotenv>=16.3.1
+express>=4.18.2
+express-rate-limit>=8.2.1
+express-validator>=7.3.1
+googleapis>=171.4.0
+helmet>=8.1.0
+joi>=18.0.2
+jsonwebtoken>=9.0.3
+mongodb>=7.0.0
+node-cron>=4.2.1
+nodemailer>=8.0.1
+passport>=0.7.0
+passport-google-oauth20>=2.0.0
+razorpay>=2.9.6
+socket.io>=4.8.3
+winston>=3.19.0
+winston-daily-rotate-file>=5.0.0
+
+# --------------------------------------------------------------------------------
+# FRONTEND DEPENDENCIES (from frontend/package.json)
+# --------------------------------------------------------------------------------
+@hookform/resolvers>=5.2.2
+clsx>=2.1.1
+date-fns>=4.1.0
+framer-motion>=12.31.0
+jwt-decode>=4.0.0
+mongodb>=7.0.0
+next>=14.0.4
+react>=18.2.0
+react-dom>=18.2.0
+react-hook-form>=7.71.1
+react-hot-toast>=2.6.0
+react-icons>=4.12.0
+react-window>=2.2.6
+recharts>=3.7.0
+socket.io-client>=4.8.3
+zod>=4.3.6
