@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { BlogHeader } from '@/components/design/BlogHeader';
 import { POSTS, ALL_CATEGORIES, type BlogPost } from '@/lib/blogPosts';
 
+import AdSenseAdUnit from '@/components/ads/AdSenseAdUnit';
+import Footer from '@/components/layout/Footer';
+
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
 
 function ClockIcon() {
@@ -177,7 +180,12 @@ function BlogIndex() {
         ))}
       </div>
 
-      <p style={{ marginTop: 48, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>
+      {/* AdSense Ad Unit Placement on Blog Index */}
+      <div style={{ marginTop: 40, marginBottom: 20 }}>
+        <AdSenseAdUnit format="horizontal" />
+      </div>
+
+      <p style={{ marginTop: 24, textAlign: 'center', fontSize: 13, color: 'var(--muted)' }}>
         Showing {filtered.length} of {POSTS.length} articles
       </p>
     </main>
@@ -224,6 +232,8 @@ export default function BlogsPage() {
           </main>
         )}
       </div>
+
+      <Footer />
     </div>
   );
 }

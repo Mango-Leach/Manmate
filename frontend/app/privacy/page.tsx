@@ -373,8 +373,10 @@ export default function PrivacyPage() {
             <SubHeading>8.3 Managing Cookies</SubHeading>
             <P>You can control cookie behaviour through your browser settings. Disabling essential cookies will prevent you from signing in or using authenticated features. We do not respond to "Do Not Track" browser signals at this time.</P>
 
-            <SubHeading>8.4 Advertising & Personalisation Choices</SubHeading>
-            <P>You can opt out of personalised advertising by Google by visiting <Strong>adssettings.google.com</Strong>, or opt out of third-party vendors' use of cookies for personalised advertising by visiting <Strong>optout.aboutads.info</Strong>. These settings are independent of your MannMate account and are managed entirely by your browser and Google.</P>
+            <SubHeading>8.4 Google AdSense & Third-Party Advertising Disclosures</SubHeading>
+            <P>Third-party vendors, including Google, use cookies to serve ads based on a user's prior visits to our website or other websites on the Internet.</P>
+            <P>Google's use of advertising cookies enables it and its partners to serve advertisements to our users based on their visit to our site and/or other sites on the Internet.</P>
+            <P>Users may opt out of personalized advertising at any time by visiting <a href="https://adssettings.google.com" target="_blank" rel="noopener noreferrer" style={linkStyle}>Google Ads Settings</a>. Alternatively, users can opt out of a third-party vendor's use of cookies for personalized advertising by visiting <a href="https://optout.aboutads.info" target="_blank" rel="noopener noreferrer" style={linkStyle}>www.aboutads.info</a>.</P>
           </Section>
 
           <Section id="retention" title="9. Data Retention">

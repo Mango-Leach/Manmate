@@ -55,11 +55,23 @@ export const metadata: Metadata = {
   // TODO: Replace og-image.png with real designed OG image before launch
 };
 
+import GoogleAdSense from '@/components/ads/GoogleAdSense';
+import CookieConsent from '@/components/consent/CookieConsent';
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
         <meta name="google-adsense-account" content="ca-pub-3656534810825959" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,400&family=Geist:wght@300;400;500;600&family=Noto+Sans+Devanagari:wght@400;500&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body suppressHydrationWarning>
+        <GoogleAdSense />
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-SLL5HGM34R"
           strategy="afterInteractive"
@@ -72,14 +84,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             gtag('config', 'G-SLL5HGM34R');
           `}
         </Script>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,400&family=Geist:wght@300;400;500;600&family=Noto+Sans+Devanagari:wght@400;500&display=swap"
-          rel="stylesheet"
-        />
-      </head>
-      <body suppressHydrationWarning>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -107,6 +111,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
         {children}
+        <CookieConsent />
       </body>
     </html>
   );
