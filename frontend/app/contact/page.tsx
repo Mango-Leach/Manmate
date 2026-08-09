@@ -10,6 +10,8 @@ const CONTACTS = [
   { label: 'Press & partnerships', value: 'business.mannmate@gmail.com' },
 ];
 
+import Footer from '@/components/layout/Footer';
+
 export default function ContactPage() {
   const router = useRouter();
   const [user, setUser] = useState<ReturnType<typeof getCurrentUser>>(null);
@@ -21,7 +23,7 @@ export default function ContactPage() {
   const dashboardPath = user ? getRoleDashboard(user.role) : '/';
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg)' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column' }}>
 
       {/* Nav */}
       <nav style={{
@@ -60,7 +62,7 @@ export default function ContactPage() {
       </div>
 
       {/* Body */}
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: '64px 32px 100px' }}>
+      <div style={{ maxWidth: 720, margin: '0 auto', padding: '64px 32px 60px', flex: 1 }}>
 
         <div style={{
           background: 'var(--card)', border: '1px solid var(--line)',
@@ -94,17 +96,9 @@ export default function ContactPage() {
           </p>
         </section>
 
-        <div style={{ marginTop: 48, textAlign: 'center' }}>
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 20, fontSize: 13 }}>
-            <a href="/privacy" style={linkStyle}>Privacy Policy</a>
-            <span style={{ color: 'var(--muted)' }}>·</span>
-            <a href="/terms" style={linkStyle}>Terms &amp; Conditions</a>
-            <span style={{ color: 'var(--muted)' }}>·</span>
-            <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', color: 'var(--sage)', cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>Return home</button>
-          </div>
-        </div>
-
       </div>
+
+      <Footer />
     </div>
   );
 }

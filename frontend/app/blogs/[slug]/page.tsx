@@ -52,6 +52,9 @@ export function generateMetadata({ params }: { params: { slug: string } }): Meta
   };
 }
 
+import AdSenseAdUnit from '@/components/ads/AdSenseAdUnit';
+import Footer from '@/components/layout/Footer';
+
 export default function BlogPostPage({ params }: { params: { slug: string } }) {
   const post = POSTS.find(p => p.slug === params.slug);
   if (!post) notFound();
@@ -65,6 +68,7 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
         margin: '0 auto',
         padding: 'clamp(40px, 8vw, 80px) clamp(20px, 5vw, 48px)',
         width: '100%',
+        flex: 1,
       }}>
         <Link href="/blogs" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--muted)', border: '1px solid var(--line)', borderRadius: 999, padding: '6px 14px', textDecoration: 'none', marginBottom: 40 }}>
           <ArrowLeft /> Back to Blogs
@@ -96,6 +100,9 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
           {post.excerpt}
         </p>
 
+        {/* AdSense In-Article Ad Unit */}
+        <AdSenseAdUnit format="auto" responsive={true} />
+
         {post.sections.map((s, i) => (
           <div key={i} style={{ marginBottom: 32 }}>
             {s.heading && (
@@ -124,6 +131,8 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
           </a>
         </div>
       </main>
+
+      <Footer />
     </div>
   );
 }
