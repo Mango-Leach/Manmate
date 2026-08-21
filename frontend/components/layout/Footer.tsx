@@ -39,6 +39,7 @@ export function Footer() {
                 <li><Link href="/blogs" style={linkStyle}>Mental Health Blog</Link></li>
                 <li><Link href="/therapists" style={linkStyle}>Find Therapists</Link></li>
                 <li><Link href="/listener" style={linkStyle}>Become a Listener</Link></li>
+                <li><Link href="/faq" style={linkStyle}>FAQs</Link></li>
               </ul>
             </div>
 

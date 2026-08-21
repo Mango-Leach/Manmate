@@ -110,9 +110,10 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
                 {s.heading}
               </h2>
             )}
-            <p style={{ fontSize: 16, color: 'var(--ink-2)', lineHeight: 1.8, margin: 0 }}>
-              {s.body}
-            </p>
+            <p 
+              style={{ fontSize: 16, color: 'var(--ink-2)', lineHeight: 1.8, margin: 0 }}
+              dangerouslySetInnerHTML={{ __html: s.body }}
+            />
           </div>
         ))}
 

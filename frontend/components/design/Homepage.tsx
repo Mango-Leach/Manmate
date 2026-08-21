@@ -705,7 +705,7 @@ function SiteFooter() {
         {[
           { title: 'Support', links: ['Talk to Serenity', 'Peer listeners', 'Book a therapist', 'Community'] },
           { title: 'Platform', links: ['How it works', 'For therapists', 'For listeners', 'Blogs'] },
-          { title: 'Company', links: ['About us', 'Terms & conditions', 'Privacy policy', 'Contact us', 'Disclaimer'] },
+          { title: 'Company', links: ['About us', 'Terms & conditions', 'Privacy policy', 'Contact us', 'Disclaimer', 'FAQs'] },
         ].map(col => (
           <div key={col.title}>
             <div style={{ fontSize: 12, letterSpacing: 1.2, textTransform: 'uppercase', color: 'var(--muted)', marginBottom: 14, fontWeight: 500 }}>{col.title}</div>
@@ -740,6 +740,7 @@ const FOOTER_LINK_MAP: Record<string, { type: 'route' | 'href' | 'guarded'; dest
   'Privacy policy':     { type: 'route',   dest: '/privacy' },
   'Contact us':         { type: 'route',   dest: '/contact' },
   'Disclaimer':         { type: 'route',   dest: '/disclaimer' },
+  'FAQs':               { type: 'route',   dest: '/faq' },
 };
 
 function FooterLink({ label, router }: { label: string; router: ReturnType<typeof useRouter> }) {
