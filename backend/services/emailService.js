@@ -166,8 +166,9 @@ class EmailService {
         `;
     const text = `Your StressReliefChat login code is: ${otp}\n\nThis code will expire in 5 minutes.\n\nIf you didn't request this code, please ignore this email.`;
 
-    // Log OTP in console for development when email is not configured
-    if (!this.transporter) {
+    // Only expose OTPs in local development when no real email transport is
+    // configured. Never write login codes to production logs.
+    if (!this.transporter && !this.elasticEmailApiKey && process.env.NODE_ENV !== 'production') {
       logger.info(`📧 OTP for ${email}: ${otp} (Email not sent - SMTP not configured)`);
       logger.info('💡 Check backend console for OTP code');
     }
