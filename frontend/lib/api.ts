@@ -151,10 +151,19 @@ export function getCurrentUser(): User | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = sessionStorage.getItem('currentUser') || localStorage.getItem('currentUser');
-    if (raw) return JSON.parse(raw);
-
     const token = getToken();
-    return token ? getUserFromToken(token) : null;
+    const tokenUser = token ? getUserFromToken(token) : null;
+    if (raw) {
+      const cachedUser = JSON.parse(raw) as User;
+      // localStorage and sessionStorage can belong to different sign-ins
+      // (for example, after switching accounts in another tab). Never pair
+      // one account's cached email/role with another account's auth token.
+      if (tokenUser?.email && cachedUser?.email?.toLowerCase() !== tokenUser.email.toLowerCase()) {
+        return tokenUser;
+      }
+      return cachedUser;
+    }
+    return tokenUser;
   } catch {
     const token = getToken();
     return token ? getUserFromToken(token) : null;

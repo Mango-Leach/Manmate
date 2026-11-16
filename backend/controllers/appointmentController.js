@@ -8,6 +8,14 @@ const whatsappService = require('../services/whatsappService');
 const logger = require('../utils/logger');
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DEFAULT_BOOKING_SLOTS = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00', '18:00'];
+
+function getTherapistDayAvailability(therapist, weekday) {
+  const configured = therapist.availability?.[weekday];
+  if (Array.isArray(configured)) return configured;
+  if (therapist.isDemo || !therapist.email) return [];
+  return DEFAULT_BOOKING_SLOTS;
+}
 
 // Derive the weekday name from a calendar date string ("YYYY-MM-DD") without
 // any timezone dependence. Falls back to UTC interpretation for other formats.
@@ -134,7 +142,7 @@ exports.createAppointment = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Invalid appointment date' });
     }
     const weekday = getCalendarWeekday(date);
-    const dayAvailability = (therapist.availability && therapist.availability[weekday]) || [];
+    const dayAvailability = getTherapistDayAvailability(therapist, weekday);
     if (!Array.isArray(dayAvailability) || !dayAvailability.includes(timeSlot)) {
       return res.status(400).json({
         success: false,
@@ -179,6 +187,18 @@ exports.createAppointment = async (req, res) => {
       });
     }
 
+    // Validate the exact start time before charging the wallet. A rejected
+    // near-term booking must never deduct funds without creating an appointment.
+    const [hours, minutes] = timeSlot.split(':');
+    const startDateTime = new Date(appointmentDate);
+    startDateTime.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+    if (startDateTime.getTime() - Date.now() < 30 * 60 * 1000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please choose an appointment at least 30 minutes from now so the meeting reminder can arrive on time.'
+      });
+    }
+
     // Charge the client's wallet for the full session price (set per therapist in
     // the admin dashboard via `pricePerMin`, which holds the fixed session fee).
     // Deduct up-front so the slot is only held once paid; refund if the insert
@@ -207,12 +227,6 @@ exports.createAppointment = async (req, res) => {
       }
     }
 
-    // Parse appointment date and time
-// Duplicate declaration removed; using earlier appointmentDate variable
-    const [hours, minutes] = timeSlot.split(':');
-    const startDateTime = new Date(appointmentDate);
-    startDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-
     // Assume 1-hour sessions
     const endDateTime = new Date(startDateTime);
     endDateTime.setHours(startDateTime.getHours() + 1);
@@ -226,6 +240,7 @@ exports.createAppointment = async (req, res) => {
     const oneHourReminderAt = skipOneHourReminder
       ? null
       : new Date(startDateTime.getTime() - 60 * 60 * 1000);
+    const thirtyMinuteReminderAt = new Date(startDateTime.getTime() - 30 * 60 * 1000);
     const fiveMinuteReminderAt = new Date(startDateTime.getTime() - 5 * 60 * 1000);
 
     // NOTE: The Google Calendar event + Meet link are intentionally NOT created
@@ -254,6 +269,7 @@ exports.createAppointment = async (req, res) => {
         reminderSchedule: {
           skipOneHourReminder,
           oneHourReminderAt,
+          thirtyMinuteReminderAt,
           fiveMinuteReminderAt
         }
       });
@@ -460,6 +476,7 @@ exports.updateAppointmentStatus = async (req, res) => {
       // (deferred from booking time). Only if one doesn't already exist and the
       // therapist hasn't turned off auto-Meet creation (bug T-4).
       const autoMeetEnabled = !therapist || therapist.autoCreateMeet !== false;
+      let calendarFailureMessage = null;
       if (status === 'confirmed' && !updated.calendarEventId && autoMeetEnabled) {
         try {
           let startDateTime = updated.startDateTime ? new Date(updated.startDateTime) : null;
@@ -491,11 +508,25 @@ exports.updateAppointmentStatus = async (req, res) => {
             });
             updated.meetingLink = calendarEvent.meetLink;
             updated.calendarEventId = calendarEvent.eventId;
-            logger.info(`✅ Calendar event created on confirm: ${calendarEvent.eventId}, Meet: ${calendarEvent.meetLink}`);
+            logger.info(`✅ Calendar event created on confirm: ${calendarEvent.eventId}; Meet link generated: ${Boolean(calendarEvent.meetLink)}`);
           }
         } catch (calErr) {
+          calendarFailureMessage = calErr.message;
           logger.error('Calendar event creation on confirm failed (non-critical):', calErr.message);
         }
+      }
+
+      // A confirmed appointment must have a real Meet link; otherwise the UI
+      // would promise a link the client can never receive. Keep the slot held,
+      // but put the booking back into pending until calendar setup is fixed.
+      if (status === 'confirmed' && !updated.meetingLink) {
+        await Appointment.updateStatus(id, 'pending');
+        return res.status(503).json({
+          success: false,
+          error: calendarFailureMessage
+            ? `Could not create the Google Meet link: ${calendarFailureMessage}`
+            : 'Could not create the Google Meet link. Check that this therapist has connected Google Calendar and try again.'
+        });
       }
 
       // On cancellation: remove the calendar event if one was created.
@@ -591,7 +622,7 @@ exports.rescheduleAppointment = async (req, res) => {
     const owningTherapist = await Therapist.findById(existing.therapistId.toString());
     if (owningTherapist) {
       const weekday = getCalendarWeekday(date);
-      const dayAvailability = (owningTherapist.availability && owningTherapist.availability[weekday]) || [];
+      const dayAvailability = getTherapistDayAvailability(owningTherapist, weekday);
       if (!Array.isArray(dayAvailability) || !dayAvailability.includes(timeSlot)) {
         return res.status(400).json({
           success: false,
@@ -618,6 +649,7 @@ exports.rescheduleAppointment = async (req, res) => {
     const msUntilSession = startDateTime.getTime() - now.getTime();
     const skipOneHourReminder = msUntilSession < 60 * 60 * 1000;
     const oneHourReminderAt = skipOneHourReminder ? null : new Date(startDateTime.getTime() - 60 * 60 * 1000);
+    const thirtyMinuteReminderAt = new Date(startDateTime.getTime() - 30 * 60 * 1000);
     const fiveMinuteReminderAt = new Date(startDateTime.getTime() - 5 * 60 * 1000);
 
     let updated;
@@ -627,7 +659,7 @@ exports.rescheduleAppointment = async (req, res) => {
         timeSlot,
         startDateTime,
         endDateTime,
-        reminderSchedule: { skipOneHourReminder, oneHourReminderAt, fiveMinuteReminderAt }
+        reminderSchedule: { skipOneHourReminder, oneHourReminderAt, thirtyMinuteReminderAt, fiveMinuteReminderAt }
       });
     } catch (rescheduleError) {
       if (rescheduleError.code === 'SLOT_CONFLICT') {

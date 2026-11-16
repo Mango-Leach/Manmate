@@ -1,9 +1,10 @@
 require('dotenv').config();
 
-// Some networks' DNS servers refuse Node's SRV lookups (querySrv ECONNREFUSED)
-// even though the OS resolver succeeds. Force a public resolver so
-// mongodb+srv:// lookups work on any device/network.
-require('dns').setServers(['8.8.8.8', '1.1.1.1']);
+// Use the OS DNS resolver by default. Networks can optionally supply alternate
+// resolvers for MongoDB SRV lookup issues via DNS_SERVERS="8.8.8.8,1.1.1.1".
+const dns = require('dns');
+const dnsServers = (process.env.DNS_SERVERS || '').split(',').map((server) => server.trim()).filter(Boolean);
+if (dnsServers.length) dns.setServers(dnsServers);
 
 const express = require('express');
 const http = require('http');

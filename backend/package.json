@@ -11,6 +11,7 @@
         "lint:fix": "eslint . --ext .js --fix",
         "logs": "tail -f logs/combined-*.log",
         "set-admin": "node set-admin.js",
+        "seed:demo-therapists": "node seed-demo-therapists.js",
         "tunnel": "ngrok http 5000 --subdomain=stressrelief-local"
     },
     "keywords": [
@@ -33,9 +34,9 @@
         "joi": "^18.0.2",
         "jsonwebtoken": "^9.0.3",
         "mongodb": "^7.0.0",
-        "ngrok": "5.0.0-beta.2",
+        "ngrok": "^5.0.0-beta.2",
         "node-cron": "^4.2.1",
-        "nodemailer": "^8.0.1",
+        "nodemailer": "^10.5.0",
         "passport": "^0.7.0",
         "passport-google-oauth20": "^2.0.0",
         "razorpay": "^2.9.6",

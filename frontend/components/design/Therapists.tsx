@@ -12,11 +12,13 @@ interface TherapistAPI {
   name: string;
   title?: string;
   description?: string;
+  avatar?: string;
   specialties: string[];
   pricePerMin: number;
   rating: number;
   experience?: string;
   googleCalendarConnected?: boolean;
+  isDemo?: boolean;
 }
 
 interface TherapistUI extends TherapistAPI {
@@ -50,26 +52,41 @@ export function Therapists({ user }: { user: UserInfo | null }) {
   const [selected, setSelected] = React.useState<TherapistUI | null>(null);
   const [filter, setFilter] = React.useState('all');
   const [search, setSearch] = React.useState('');
+  const hasLoadedDirectory = React.useRef(false);
 
   React.useEffect(() => {
-    fetch(`${getApiUrl()}/api/therapists`)
-      .then(r => r.json())
-      .then(res => {
-        if (res?.success && Array.isArray(res.data)) {
-          setTherapists(
-            res.data.map((t: TherapistAPI, i: number) => ({
+    const refresh = () => {
+      fetch(`${getApiUrl()}/api/therapists`, { cache: 'no-store' })
+        .then(r => r.json())
+        .then(res => {
+          if (res?.success && Array.isArray(res.data)) {
+            const refreshed: TherapistUI[] = res.data.map((t: TherapistAPI, i: number) => ({
               ...t,
               id: t.id || t._id || '',
               specialties: Array.isArray(t.specialties) ? t.specialties : [],
               tone: assignTone(i),
-            }))
-          );
-        } else {
-          setError('Could not load therapists. Please try again later.');
-        }
-      })
-      .catch(() => setError('Network error. Please check your connection.'))
-      .finally(() => setLoading(false));
+            }));
+            setTherapists(refreshed);
+            setSelected(current => current ? refreshed.find(t => t.id === current.id) || current : null);
+            hasLoadedDirectory.current = true;
+            setError('');
+          } else if (!hasLoadedDirectory.current) {
+            setError('Could not load therapists. Please try again later.');
+          }
+        })
+        .catch(() => { if (!hasLoadedDirectory.current) setError('Network error. Please check your connection.'); })
+        .finally(() => setLoading(false));
+    };
+    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    refresh();
+    const refreshTimer = window.setInterval(refresh, 15000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
   }, []);
 
   const filtered = therapists.filter(t => {
@@ -83,6 +100,7 @@ export function Therapists({ user }: { user: UserInfo | null }) {
       (t.title || '').toLowerCase().includes(search.toLowerCase());
     return matchesFilter && matchesSearch;
   });
+  const demoOnly = therapists.length > 0 && therapists.every(t => t.isDemo);
 
   return (
     <div style={{ background: 'var(--bg)', minHeight: '100vh' }}>
@@ -93,13 +111,17 @@ export function Therapists({ user }: { user: UserInfo | null }) {
           {/* Header */}
           <div style={{ marginBottom: 32, animation: 'fadeUp 0.4s ease both' }}>
             <Pill tone="sage" style={{ marginBottom: 16 }}>
-              {loading ? 'Loading…' : `${therapists.length} verified therapist${therapists.length !== 1 ? 's' : ''}`}
+              {loading ? 'Loading…' : demoOnly
+                ? `${therapists.length} demo profiles`
+                : `${therapists.length} therapist profile${therapists.length !== 1 ? 's' : ''}`}
             </Pill>
             <h1 className="serif" style={{ fontSize: 'clamp(28px, 5vw, 52px)', margin: 0, fontWeight: 400, letterSpacing: -0.015, lineHeight: 1.05 }}>
               Find someone who <em style={{ fontStyle: 'italic', color: 'var(--sage)' }}>fits</em>.
             </h1>
             <p style={{ fontSize: 17, color: 'var(--ink-2)', maxWidth: 560, marginTop: 16 }}>
-              Every therapist here is licensed, background-checked, and reviewed by real clients. Sessions happen on Google Meet.
+              {demoOnly
+                ? 'Explore these sample profiles and areas of focus. They are fictional previews and cannot be booked.'
+                : 'Explore therapist profiles and areas of focus. Any sample profiles are fictional previews and cannot be booked.'}
             </p>
           </div>
 
@@ -206,7 +228,7 @@ function TherapistCard({ t, index, onClick }: { t: TherapistUI; index: number; o
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, marginBottom: 16 }}>
-        <Avatar name={t.name} tone={t.tone} size={64} />
+        <Avatar name={t.name} tone={t.tone} size={64} image={t.avatar} />
         <div style={{ flex: 1 }}>
           <div className="serif" style={{ fontSize: 20, fontWeight: 500 }}>{t.name}</div>
           {t.title && <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>{t.title}{t.experience ? ` · ${t.experience}` : ''}</div>}
@@ -219,9 +241,12 @@ function TherapistCard({ t, index, onClick }: { t: TherapistUI; index: number; o
       </div>
 
       {t.description && (
-        <p className="serif" style={{ fontSize: 15, color: 'var(--ink-2)', margin: '0 0 16px', lineHeight: 1.5, fontStyle: 'italic' }}>
-          &ldquo;{t.description}&rdquo;
-        </p>
+        <div style={{ margin: '0 0 16px' }}>
+          {t.isDemo && <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, letterSpacing: 0.8, marginBottom: 5 }}>SAMPLE REFLECTION</div>}
+          <p className={t.isDemo ? 'serif' : undefined} style={{ fontSize: 14, color: 'var(--ink-2)', margin: 0, lineHeight: 1.6, fontStyle: t.isDemo ? 'italic' : 'normal' }}>
+            {t.description}
+          </p>
+        </div>
       )}
 
       {t.specialties.length > 0 && (
@@ -235,16 +260,25 @@ function TherapistCard({ t, index, onClick }: { t: TherapistUI; index: number; o
           {t.googleCalendarConnected !== undefined && (
             <>
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>Calendar</div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: t.googleCalendarConnected ? 'var(--sage)' : 'var(--muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: t.isDemo ? 'var(--muted)' : t.googleCalendarConnected ? 'var(--sage)' : 'var(--muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
                 {t.googleCalendarConnected && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--sage)', display: 'inline-block' }} />}
-                {t.googleCalendarConnected ? 'Synced' : 'Contact to book'}
+                {t.isDemo ? 'Sample booking · no real appointment' : t.googleCalendarConnected ? 'Synced' : 'Contact to book'}
               </div>
             </>
           )}
         </div>
         <div style={{ textAlign: 'right' }}>
-          <span className="serif" style={{ fontSize: 22, fontWeight: 500 }}>₹{t.pricePerMin.toLocaleString()}</span>
-          <div style={{ fontSize: 11, color: 'var(--muted)' }}>per session · 50 min</div>
+          {t.isDemo ? (
+            <>
+              <span className="serif" style={{ fontSize: 22, fontWeight: 500 }}>₹0/min</span>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>Sample session · ₹0</div>
+            </>
+          ) : (
+            <>
+              <span className="serif" style={{ fontSize: 22, fontWeight: 500 }}>₹{t.pricePerMin.toLocaleString()}</span>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>per session · 50 min</div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -254,6 +288,10 @@ function TherapistCard({ t, index, onClick }: { t: TherapistUI; index: number; o
 // ── Booking Modal ────────────────────────────────────────────────────────────────
 
 const TIME_SLOTS = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00', '18:00'];
+const DEMO_BOOKINGS_STORAGE_KEY = 'manmate-demo-bookings-v1';
+const DEMO_WEEKLY_AVAILABILITY = Object.fromEntries(
+  ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => [day, TIME_SLOTS])
+) as Record<string, string[]>;
 
 function BookingModal({ t, user, onClose }: { t: TherapistUI; user: UserInfo | null; onClose: () => void }) {
   const [step, setStep] = React.useState<'pick' | 'confirm' | 'done'>('pick');
@@ -273,11 +311,28 @@ function BookingModal({ t, user, onClose }: { t: TherapistUI; user: UserInfo | n
   const dayAvailability = weekday ? (availability[weekday] || []) : [];
   const canProceed = !!date && !!timeSlot && !bookedSlots.includes(timeSlot) && dayAvailability.includes(timeSlot);
 
+  const readDemoBookings = React.useCallback((): Array<{ therapistId: string; date: string; timeSlot: string }> => {
+    try {
+      const stored = localStorage.getItem(DEMO_BOOKINGS_STORAGE_KEY);
+      const parsed = stored ? JSON.parse(stored) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
   // Fetch the slots already taken for this therapist on the chosen date so we can
   // hide/disable them. Without this, every slot always looks available and two
   // users can pick the same one.
   const fetchBookedSlots = React.useCallback(async () => {
     if (!date) { setBookedSlots([]); return; }
+    if (t.isDemo) {
+      setBookedSlots(readDemoBookings()
+        .filter(booking => booking.therapistId === t.id && booking.date === date)
+        .map(booking => booking.timeSlot));
+      setLoadingSlots(false);
+      return;
+    }
     setLoadingSlots(true);
     try {
       const res = await fetch(
@@ -289,13 +344,17 @@ function BookingModal({ t, user, onClose }: { t: TherapistUI; user: UserInfo | n
       setBookedSlots([]);
     }
     setLoadingSlots(false);
-  }, [date, t.id]);
+  }, [date, readDemoBookings, t.id, t.isDemo]);
 
   React.useEffect(() => { fetchBookedSlots(); }, [fetchBookedSlots]);
 
   // Load therapist availability when modal opens
   React.useEffect(() => {
     if (!t.id) return;
+    if (t.isDemo) {
+      setAvailability(DEMO_WEEKLY_AVAILABILITY);
+      return;
+    }
     // Reset availability before fetching new data to avoid stale UI
     setAvailability({});
     const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
@@ -314,9 +373,31 @@ function BookingModal({ t, user, onClose }: { t: TherapistUI; user: UserInfo | n
         }
       })
       .catch(() => setAvailability({}));
-  }, [t.id]);
+  }, [t.id, t.isDemo]);
 
   const handleBook = async () => {
+    if (t.isDemo) {
+      if (!canProceed) return;
+      const bookings = readDemoBookings();
+      const alreadyBooked = bookings.some(booking => booking.therapistId === t.id && booking.date === date && booking.timeSlot === timeSlot);
+      if (alreadyBooked) {
+        setBookingError('That sample time was just booked in this browser. Choose another time.');
+        setBookedSlots(bookings.filter(booking => booking.therapistId === t.id && booking.date === date).map(booking => booking.timeSlot));
+        setStep('pick');
+        return;
+      }
+      bookings.push({ therapistId: t.id, date, timeSlot });
+      try {
+        localStorage.setItem(DEMO_BOOKINGS_STORAGE_KEY, JSON.stringify(bookings));
+      } catch {
+        setBookingError('Could not save the sample booking in this browser. Check browser storage settings and try again.');
+        setStep('pick');
+        return;
+      }
+      setBookedSlots(bookings.filter(booking => booking.therapistId === t.id && booking.date === date).map(booking => booking.timeSlot));
+      setStep('done');
+      return;
+    }
     if (!canProceed || !clientEmail || !clientName) return;
     setSubmitting(true);
     setBookingError('');
@@ -387,7 +468,7 @@ function BookingModal({ t, user, onClose }: { t: TherapistUI; user: UserInfo | n
       }}>
         {/* Header */}
         <div style={{ padding: '28px 32px 24px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 16 }}>
-          <Avatar name={t.name} tone={t.tone} size={56} />
+          <Avatar name={t.name} tone={t.tone} size={56} image={t.avatar} />
           <div style={{ flex: 1 }}>
             <div className="serif" style={{ fontSize: 24, fontWeight: 500 }}>{t.name}</div>
             <div style={{ fontSize: 13, color: 'var(--muted)' }}>
@@ -402,6 +483,12 @@ function BookingModal({ t, user, onClose }: { t: TherapistUI; user: UserInfo | n
 
         {/* Body */}
         <div style={{ padding: '28px 32px' }}>
+
+          {t.isDemo && step !== 'done' && (
+            <div style={{ marginBottom: 22, padding: 16, borderRadius: 14, background: 'var(--sage-soft)', color: 'var(--ink-2)', fontSize: 14, lineHeight: 1.55 }}>
+              Sample booking only. It is saved in this browser for demonstration; no therapist is contacted and no email or Google Meet link is created.
+            </div>
+          )}
 
           {step === 'pick' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
@@ -474,7 +561,7 @@ function BookingModal({ t, user, onClose }: { t: TherapistUI; user: UserInfo | n
                 )}
               </div>
 
-              {!user && (
+              {!user && !t.isDemo && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div>
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>Your name</div>
@@ -499,8 +586,14 @@ function BookingModal({ t, user, onClose }: { t: TherapistUI; user: UserInfo | n
                   }} />
               </div>
 
+              {bookingError && (
+                <div style={{ padding: '10px 14px', borderRadius: 10, background: 'rgba(178,107,92,0.1)', color: 'var(--alert)', fontSize: 14 }}>
+                  {bookingError}
+                </div>
+              )}
+
               <div style={{ padding: 16, background: 'var(--bg-2)', borderRadius: 14, fontSize: 13, color: 'var(--ink-2)', display: 'flex', gap: 10, alignItems: 'center' }}>
-                {Icon.video(16)} Session on Google Meet. A link will arrive via email 30 minutes before.
+                {Icon.video(16)} {t.isDemo ? 'Sample session · no email or meeting link will be sent.' : 'Session on Google Meet. A link will arrive via email 30 minutes before.'}
               </div>
             </div>
           )}
@@ -512,8 +605,7 @@ function BookingModal({ t, user, onClose }: { t: TherapistUI; user: UserInfo | n
                 { label: 'Therapist', value: t.name },
                 { label: 'Date', value: formattedDate },
                 { label: 'Time', value: timeSlot },
-                { label: 'Your name', value: clientName },
-                { label: 'Your email', value: clientEmail },
+                ...(!t.isDemo ? [{ label: 'Your name', value: clientName }, { label: 'Your email', value: clientEmail }] : []),
                 ...(notes ? [{ label: 'Notes', value: notes }] : []),
               ].map((row, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', borderBottom: '1px solid var(--line-2)' }}>
@@ -529,7 +621,17 @@ function BookingModal({ t, user, onClose }: { t: TherapistUI; user: UserInfo | n
             </div>
           )}
 
-          {step === 'done' && (
+          {step === 'done' && t.isDemo && (
+            <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+              <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'var(--sage-soft)', color: 'var(--sage)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px' }}>{Icon.check(32)}</div>
+              <h3 className="serif" style={{ fontSize: 30, fontWeight: 400, margin: '0 0 12px' }}>Sample session booked.</h3>
+              <p style={{ color: 'var(--ink-2)', fontSize: 15, margin: 0, lineHeight: 1.6 }}>
+                {t.name} · {formattedDate} at {timeSlot}. This is a local demonstration only; it is not sent to a therapist and no email or Google Meet link will be sent.
+              </p>
+            </div>
+          )}
+
+          {!t.isDemo && step === 'done' && (
             <div style={{ textAlign: 'center', padding: '40px 20px' }}>
               <div style={{
                 width: 72, height: 72, borderRadius: '50%', background: 'var(--sage-soft)',
@@ -550,7 +652,7 @@ function BookingModal({ t, user, onClose }: { t: TherapistUI; user: UserInfo | n
           <div>
             {step !== 'done' && (
               <>
-                <span style={{ fontSize: 13, color: 'var(--muted)' }}>Total · 50 min session</span>
+                <span style={{ fontSize: 13, color: 'var(--muted)' }}>{t.isDemo ? 'Sample · 50 min' : 'Total · 50 min session'}</span>
                 <div className="serif" style={{ fontSize: 24, fontWeight: 500 }}>₹{t.pricePerMin.toLocaleString()}</div>
               </>
             )}
@@ -558,6 +660,7 @@ function BookingModal({ t, user, onClose }: { t: TherapistUI; user: UserInfo | n
           <div style={{ display: 'flex', gap: 10 }}>
             {step === 'pick' && (
               <Button tone="primary" size="lg"
+                disabled={!canProceed}
                 onClick={() => setStep('confirm')}
                 style={{ opacity: canProceed ? 1 : 0.5, cursor: canProceed ? 'pointer' : 'not-allowed' }}>
                 Continue
@@ -567,11 +670,12 @@ function BookingModal({ t, user, onClose }: { t: TherapistUI; user: UserInfo | n
               <>
                 <Button tone="ghost" size="lg" onClick={() => { setStep('pick'); setBookingError(''); }}>Back</Button>
                 <Button tone="primary" size="lg" onClick={handleBook} style={{ opacity: submitting ? 0.7 : 1 }}>
-                  {submitting ? 'Booking…' : 'Confirm booking'}
+                  {submitting ? 'Booking…' : t.isDemo ? 'Book sample session' : 'Confirm booking'}
                 </Button>
               </>
             )}
-            {step === 'done' && (
+            {step === 'done' && t.isDemo && <Button tone="primary" size="lg" onClick={onClose}>Done</Button>}
+            {!t.isDemo && step === 'done' && (
               <Button tone="primary" size="lg" onClick={onClose}>Done</Button>
             )}
           </div>

@@ -5,7 +5,7 @@ services:
     env: node
     rootDir: backend
     plan: free # Optional: defaults to starter/free depending on account
-    buildCommand: npm install
+    buildCommand: npm ci
     startCommand: npm start
     envVars:
       - key: NODE_ENV
@@ -18,14 +18,14 @@ services:
         value: https://stress-relief-frontend.onrender.com
       - key: BACKEND_URL
         value: https://stress-relief-backend.onrender.com
+      - key: GOOGLE_CALLBACK_URL
+        value: https://stress-relief-backend.onrender.com/api/auth/google/callback
+      - key: GOOGLE_CALENDAR_REDIRECT_URI
+        value: https://stress-relief-frontend.onrender.com/therapist
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-      - key: GOOGLE_CREDENTIALS_JSON
-        sync: false # Paste the full contents of google-credentials.json here
-      - key: GOOGLE_REFRESH_TOKEN
-        sync: false # Admin Google OAuth refresh token (fallback when therapist hasn't connected)
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT
@@ -44,20 +44,12 @@ services:
     rootDir: frontend
     plan: free
     # Ensure devDependencies (like tailwindcss) are installed for the build
-    buildCommand: npm install --include=dev && npm run build
-    startCommand: npm run start:standalone
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: node .next/standalone/server.js
     envVars:
       - key: NODE_ENV
         value: production
       - key: NEXT_PUBLIC_API_URL
         value: https://stress-relief-backend.onrender.com
-      - key: NEXT_PUBLIC_GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
-        sync: false
-      - key: GOOGLE_REDIRECT_URI
-        value: https://stress-relief-frontend.onrender.com/api/auth/google/callback
-      - key: MONGODB_URI
-        sync: false # Set this to the same Mongo URI used by the backend
+      - key: NEXT_PUBLIC_SITE_URL
+        value: https://stress-relief-frontend.onrender.com

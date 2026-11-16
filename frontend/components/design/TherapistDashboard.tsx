@@ -40,6 +40,7 @@ const STATUS_COLORS: Record<ApptStatus, { bg: string; c: string; label: string }
 
 export function TherapistDashboard({ user }: { user: UserInfo }) {
   const router = useRouter();
+  const [therapistName, setTherapistName] = useState(user.name);
   const [tab, setTab] = useState<'appointments' | 'availability' | 'calendar' | 'analytics'>('appointments');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,8 +85,8 @@ export function TherapistDashboard({ user }: { user: UserInfo }) {
 
   useEffect(() => {
     Promise.all([
-      fetch(`${apiUrl}/api/appointments/therapist`, { headers }).then(r => r.json()).catch(() => ({ data: [] })),
-      fetch(`${apiUrl}/api/therapists/profile`, { headers }).then(r => r.json()).catch(() => null),
+      fetch(`${apiUrl}/api/appointments/therapist`, { headers, cache: 'no-store' }).then(r => r.json()).catch(() => ({ data: [] })),
+      fetch(`${apiUrl}/api/therapists/profile`, { headers, cache: 'no-store' }).then(r => r.json()).catch(() => null),
     ]).then(([appts, profile]) => {
       if (appts?.data) {
         // Map backend shape (timeSlot, userId.{name,email}, whatsappNumber)
@@ -101,10 +102,32 @@ export function TherapistDashboard({ user }: { user: UserInfo }) {
         })));
       }
       if (profile?.data?.availability) setAvailability(profile.data.availability);
+      if (profile?.data?.name) setTherapistName(profile.data.name);
       setLoading(false);
     });
     fetchCalendarStatus();
   }, [apiUrl, headers, fetchCalendarStatus]);
+
+  useEffect(() => {
+    const refreshProfile = () => {
+      fetch(`${apiUrl}/api/therapists/profile`, { headers, cache: 'no-store' })
+        .then(r => r.json())
+        .then(profile => {
+          if (profile?.success && profile.data) {
+            if (profile.data.name) setTherapistName(profile.data.name);
+            if (profile.data.availability) setAvailability(profile.data.availability);
+          }
+        })
+        .catch(() => null);
+    };
+    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refreshProfile(); };
+    window.addEventListener('focus', refreshProfile);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.removeEventListener('focus', refreshProfile);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [apiUrl, headers]);
 
   // Handle OAuth callback parameters idempotently
   useEffect(() => {
@@ -278,7 +301,7 @@ export function TherapistDashboard({ user }: { user: UserInfo }) {
 
   return (
     <div style={{ background: 'var(--bg)', minHeight: '100vh' }}>
-      <DashboardNav name={user.name} onSignOut={signOut} />
+      <DashboardNav name={therapistName} onSignOut={signOut} />
 
       {/* Toast */}
       {toast && (
@@ -296,7 +319,7 @@ export function TherapistDashboard({ user }: { user: UserInfo }) {
           <div>
             <div style={{ fontSize: 12, letterSpacing: 1.2, textTransform: 'uppercase', color: 'var(--sage)', fontWeight: 600, marginBottom: 8 }}>Therapist Portal</div>
             <h1 className="serif" style={{ fontSize: 'clamp(26px, 4vw, 42px)', margin: 0, fontWeight: 400, letterSpacing: -0.015 }}>
-              Dr. <em style={{ color: 'var(--sage)', fontStyle: 'italic' }}>{user.name.split(' ').slice(-1)[0]}</em>&apos;s workspace
+              Dr. <em style={{ color: 'var(--sage)', fontStyle: 'italic' }}>{therapistName.split(' ').slice(-1)[0]}</em>&apos;s workspace
             </h1>
           </div>
           <div className="tabs-row">

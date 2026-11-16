@@ -11,7 +11,7 @@ class ReminderScheduler {
 
   /**
      * Start the reminder scheduler
-     * Runs every minute for reliable 5-minute reminder delivery
+     * Runs every minute so appointment reminders are sent close to their due time.
      */
   start() {
     this.cronJob = cron.schedule('* * * * *', async () => {
@@ -110,8 +110,9 @@ class ReminderScheduler {
       // - due when scheduled time is reached
       // - session still in the future
       const oneHourDue = await appointmentsCollection.find({
-        status: { $nin: ['cancelled', 'completed'] },
+        status: 'confirmed',
         clientEmail: { $exists: true, $ne: '' },
+        meetingLink: { $exists: true, $nin: ['', null] },
         startDateTime: { $gt: now },
         'emailReminder.oneHour.sent': { $ne: true },
         'emailReminder.oneHour.skipped': { $ne: true },
@@ -123,14 +124,24 @@ class ReminderScheduler {
       // - due when scheduled time is reached
       // - session still in the future
       const fiveMinuteDue = await appointmentsCollection.find({
-        status: { $nin: ['cancelled', 'completed'] },
+        status: 'confirmed',
         clientEmail: { $exists: true, $ne: '' },
+        meetingLink: { $exists: true, $nin: ['', null] },
         startDateTime: { $gt: now },
         'emailReminder.fiveMinutes.sent': { $ne: true },
         'emailReminder.fiveMinutes.scheduledAt': { $ne: null, $lte: now }
       }).toArray();
 
-      if (oneHourDue.length === 0 && fiveMinuteDue.length === 0) {
+      const thirtyMinuteDue = await appointmentsCollection.find({
+        status: 'confirmed',
+        clientEmail: { $exists: true, $ne: '' },
+        meetingLink: { $exists: true, $nin: ['', null] },
+        startDateTime: { $gt: now },
+        'emailReminder.thirtyMinutes.sent': { $ne: true },
+        'emailReminder.thirtyMinutes.scheduledAt': { $ne: null, $lte: now }
+      }).toArray();
+
+      if (oneHourDue.length === 0 && thirtyMinuteDue.length === 0 && fiveMinuteDue.length === 0) {
         return;
       }
 
@@ -150,6 +161,17 @@ class ReminderScheduler {
           appointments: fiveMinuteDue,
           reminderPath: 'emailReminder.fiveMinutes',
           reminderType: 'five_minutes',
+          usersCollection,
+          therapistsCollection,
+          appointmentsCollection
+        });
+      }
+
+      if (thirtyMinuteDue.length > 0) {
+        await this.processReminderBatch({
+          appointments: thirtyMinuteDue,
+          reminderPath: 'emailReminder.thirtyMinutes',
+          reminderType: 'thirty_minutes',
           usersCollection,
           therapistsCollection,
           appointmentsCollection

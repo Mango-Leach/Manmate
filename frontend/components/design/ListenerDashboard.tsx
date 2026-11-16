@@ -50,6 +50,7 @@ interface ListenerStats {
 
 export function ListenerDashboard({ user }: { user: UserInfo }) {
   const router = useRouter();
+  const [listenerName, setListenerName] = useState(user.name);
   const [online, setOnline] = useState(false);
   const [clientsWaiting, setClientsWaiting] = useState(0);
   const [socketConnected, setSocketConnected] = useState(false);
@@ -59,22 +60,36 @@ export function ListenerDashboard({ user }: { user: UserInfo }) {
   const [favoriteWaiting, setFavoriteWaiting] = useState<{ kind: 'call' | 'chat'; clientName: string } | null>(null);
 
   useEffect(() => {
-    if (!user.email) return;
+    const userEmail = user.email;
+    if (!userEmail) return;
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-    fetch(`${apiUrl}/api/users/${encodeURIComponent(user.email)}`, { headers: { Authorization: `Bearer ${getToken() || ''}` } })
-      .then(r => r.json())
-      .then(res => {
-        if (res?.success && res.data) {
-          const p = res.data.listenerProfile || {};
-          setStats({
-            totalCalls: p.totalCalls || 0,
-            totalHours: parseFloat(((p.totalMinutes || 0) / 60).toFixed(1)),
-            rating: p.rating || 0,
-          });
-        }
-      })
-      .catch(() => null);
+    const refreshProfile = () => {
+      fetch(`${apiUrl}/api/users/${encodeURIComponent(userEmail)}`, { headers: { Authorization: `Bearer ${getToken() || ''}` }, cache: 'no-store' })
+        .then(r => r.json())
+        .then(res => {
+          if (res?.success && res.data) {
+            setListenerName(res.data.name || user.name);
+            const p = res.data.listenerProfile || {};
+            setStats({
+              totalCalls: p.totalCalls || 0,
+              totalHours: parseFloat(((p.totalMinutes || 0) / 60).toFixed(1)),
+              rating: p.rating || 0,
+            });
+          }
+        })
+        .catch(() => null);
+    };
+    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refreshProfile(); };
+    refreshProfile();
+    window.addEventListener('focus', refreshProfile);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.removeEventListener('focus', refreshProfile);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
   }, [user.email]);
+
+  const currentUser = { ...user, name: listenerName };
 
   useEffect(() => {
     return () => {
@@ -100,7 +115,7 @@ export function ListenerDashboard({ user }: { user: UserInfo }) {
       socket.on('connect', () => {
         setSocketConnected(true);
         setOnline(true);
-        socket.emit('go-online', { name: user.name, email: user.email || '', role: 'listener' });
+        socket.emit('go-online', { name: listenerName, email: user.email || '', role: 'listener' });
         socket.emit('get-queue-stats');
       });
 
@@ -128,14 +143,14 @@ export function ListenerDashboard({ user }: { user: UserInfo }) {
 
   return (
     <div style={{ background: 'var(--bg)', minHeight: '100vh' }}>
-      <GlobalHeader user={user} />
+      <GlobalHeader user={currentUser} />
 
       <div className="dash-pad">
         <div style={{ maxWidth: 1200, margin: '0 auto' }}>
 
           {/* Greeting */}
           <ListenerGreeting
-            user={user}
+            user={currentUser}
             online={online}
             socketConnected={socketConnected}
             clientsWaiting={clientsWaiting}

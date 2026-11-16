@@ -46,6 +46,13 @@ class AppointmentModel {
           skipped: Boolean(appointmentData.reminderSchedule?.skipOneHourReminder),
           skippedAt: appointmentData.reminderSchedule?.skipOneHourReminder ? new Date() : null
         },
+        thirtyMinutes: {
+          scheduledAt: appointmentData.reminderSchedule?.thirtyMinuteReminderAt
+            ? new Date(appointmentData.reminderSchedule.thirtyMinuteReminderAt)
+            : null,
+          sent: false,
+          sentAt: null
+        },
         fiveMinutes: {
           scheduledAt: appointmentData.reminderSchedule?.fiveMinuteReminderAt
             ? new Date(appointmentData.reminderSchedule.fiveMinuteReminderAt)
@@ -203,6 +210,9 @@ class AppointmentModel {
     const fiveMinAt = reminderSchedule?.fiveMinuteReminderAt
       ? new Date(reminderSchedule.fiveMinuteReminderAt)
       : null;
+    const thirtyMinAt = reminderSchedule?.thirtyMinuteReminderAt
+      ? new Date(reminderSchedule.thirtyMinuteReminderAt)
+      : null;
 
     let result;
     try {
@@ -225,6 +235,9 @@ class AppointmentModel {
           'emailReminder.fiveMinutes.scheduledAt': fiveMinAt,
           'emailReminder.fiveMinutes.sent': false,
           'emailReminder.fiveMinutes.sentAt': null,
+          'emailReminder.thirtyMinutes.scheduledAt': thirtyMinAt,
+          'emailReminder.thirtyMinutes.sent': false,
+          'emailReminder.thirtyMinutes.sentAt': null,
           reminderSent: false,
           updatedAt: new Date()
         }

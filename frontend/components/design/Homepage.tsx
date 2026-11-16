@@ -492,6 +492,7 @@ const CARD_TONES: AvatarToneType[] = ['sage', 'lavender', 'peach'];
 interface LiveTherapist {
   id: string;
   name: string;
+  avatar?: string;
   title?: string;
   specialties?: string[];
   rating?: number;
@@ -505,16 +506,28 @@ function TherapistPreview() {
 
   React.useEffect(() => {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-    fetch(`${API_URL}/api/therapists`)
-      .then(r => r.json())
-      .then(json => {
-        if (json.success && Array.isArray(json.data)) {
-          setTotal(json.data.length);
-          setTherapists(json.data.slice(0, 3));
-        }
-      })
-      .catch(() => { /* silently ignore — section just stays empty */ })
-      .finally(() => setLoading(false));
+    const refresh = () => {
+      fetch(`${API_URL}/api/therapists`, { cache: 'no-store' })
+        .then(r => r.json())
+        .then(json => {
+          if (json.success && Array.isArray(json.data)) {
+            setTotal(json.data.length);
+            setTherapists(json.data.slice(0, 3));
+          }
+        })
+        .catch(() => { /* keep the last loaded directory if briefly offline */ })
+        .finally(() => setLoading(false));
+    };
+    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    refresh();
+    const refreshTimer = window.setInterval(refresh, 15000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.clearInterval(refreshTimer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
   }, []);
 
   const skeletonStyle: React.CSSProperties = {
@@ -572,7 +585,7 @@ function TherapistPreview() {
                   display: 'flex', flexDirection: 'column', gap: 14,
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <Avatar name={t.name} tone={tone} size={56} />
+                    <Avatar name={t.name} tone={tone} size={56} image={t.avatar} />
                     <div>
                       <div className="serif" style={{ fontSize: 18, fontWeight: 500 }}>{t.name}</div>
                       <div style={{ fontSize: 13, color: 'var(--muted)' }}>{spec}</div>

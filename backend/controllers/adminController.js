@@ -9,6 +9,7 @@ const AppError = require('../utils/AppError');
  */
 const getListeners = async (req, res, next) => {
   try {
+    res.set('Cache-Control', 'no-store');
     const db = getDB();
     const users = db.collection('users');
 
@@ -72,57 +73,48 @@ const getListeners = async (req, res, next) => {
  */
 const addListener = async (req, res, next) => {
   try {
-    const { name, email, specialties, bio } = req.body;
-    const costPerMin = parseFloat(req.body.costPerMin);
-    const validCostPerMin = isNaN(costPerMin) ? 0 : costPerMin;
+    const { name, specialties, bio } = req.body;
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const costPerMin = req.body.costPerMin === undefined || req.body.costPerMin === ''
+      ? 0
+      : Number(req.body.costPerMin);
 
     if (!name || !email) {
       return next(new AppError('Name and email are required', 400));
     }
+    if (!Number.isFinite(costPerMin) || costPerMin < 0) {
+      return next(new AppError('Cost per minute must be zero or greater', 400));
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return next(new AppError('Enter a valid email address', 400));
+    }
 
     // Check if user already exists
     const existingUser = await UserModel.findByEmail(email);
-
     let listener;
+    if (existingUser && !['client', 'listener'].includes(existingUser.role)) {
+      return next(new AppError(`This email already belongs to a ${existingUser.role} account`, 409));
+    }
+
+    const listenerProfile = {
+      specialties: Array.isArray(specialties) ? specialties : [],
+      bio: bio || '',
+      totalCalls: existingUser?.listenerProfile?.totalCalls || 0,
+      totalMinutes: existingUser?.listenerProfile?.totalMinutes || 0,
+      rating: existingUser?.listenerProfile?.rating || 0,
+      costPerMin,
+    };
 
     if (existingUser) {
-      // User exists - upgrade them to listener role
-      if (existingUser.role === 'listener') {
-        // Already a listener - return existing data as success
-        return res.status(200).json({
-          success: true,
-          message: 'Listener already exists',
-          data: {
-            listener: {
-              id: existingUser._id.toString(),
-              name: existingUser.name,
-              email: existingUser.email,
-              isAvailable: existingUser.isAvailable,
-              totalCalls: existingUser.listenerProfile?.totalCalls || 0,
-              rating: existingUser.listenerProfile?.rating || 0,
-              specialties: existingUser.listenerProfile?.specialties || [],
-              bio: existingUser.listenerProfile?.bio || '',
-              costPerMin: existingUser.listenerProfile?.costPerMin || 0,
-            },
-          },
-        });
+      // Promote clients when needed; for an existing listener update their
+      // editable profile fields while preserving online state and call history.
+      const userUpdates = { name, listenerProfile };
+      if (existingUser.role !== 'listener') {
+        userUpdates.role = 'listener';
+        userUpdates.isAvailable = false;
       }
-
-      // Upgrade existing user to listener
-      listener = await UserModel.update(email, {
-        role: 'listener',
-        isAvailable: false,
-        listenerProfile: {
-          specialties: specialties || [],
-          bio: bio || '',
-          totalCalls: existingUser.listenerProfile?.totalCalls || 0,
-          totalMinutes: existingUser.listenerProfile?.totalMinutes || 0,
-          rating: existingUser.listenerProfile?.rating || 0,
-          costPerMin: validCostPerMin,
-        },
-      });
-
-      logger.info(`User upgraded to listener by admin: ${email}`);
+      listener = await UserModel.update(email, userUpdates);
+      logger.info(`Listener profile saved by admin: ${email}`);
     } else {
       // Create new listener
       listener = await UserModel.create({
@@ -137,7 +129,7 @@ const addListener = async (req, res, next) => {
           totalCalls: 0,
           totalMinutes: 0,
           rating: 0,
-          costPerMin: validCostPerMin,
+          costPerMin,
         },
       });
 
@@ -146,7 +138,7 @@ const addListener = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: existingUser ? 'User upgraded to listener successfully' : 'Listener created successfully',
+      message: existingUser?.role === 'listener' ? 'Listener updated successfully' : existingUser ? 'User upgraded to listener successfully' : 'Listener created successfully',
       data: {
         listener: {
           id: listener._id.toString(),
@@ -174,20 +166,28 @@ const addListener = async (req, res, next) => {
 const updateListener = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, email, specialties, bio, isAvailable } = req.body;
-    const parsedCostPerMin = parseFloat(req.body.costPerMin);
+    const { name, specialties, bio, isAvailable } = req.body;
+    const { ObjectId } = require('mongodb');
+    if (!ObjectId.isValid(id)) return next(new AppError('Invalid listener ID', 400));
 
     const updates = {};
-    if (name) updates.name = name;
-    if (email) updates.email = email;
+    if (name !== undefined) {
+      if (typeof name !== 'string' || !name.trim()) return next(new AppError('Name cannot be empty', 400));
+      updates.name = name.trim();
+    }
     if (typeof isAvailable === 'boolean') updates.isAvailable = isAvailable;
-    if (specialties) updates['listenerProfile.specialties'] = specialties;
+    if (specialties !== undefined) updates['listenerProfile.specialties'] = Array.isArray(specialties)
+      ? specialties
+      : String(specialties).split(',').map(value => value.trim()).filter(Boolean);
     if (bio !== undefined) updates['listenerProfile.bio'] = bio;
-    if (!isNaN(parsedCostPerMin)) updates['listenerProfile.costPerMin'] = parsedCostPerMin;
+    if (req.body.costPerMin !== undefined) {
+      const costPerMin = Number(req.body.costPerMin);
+      if (!Number.isFinite(costPerMin) || costPerMin < 0) return next(new AppError('Cost per minute must be zero or greater', 400));
+      updates['listenerProfile.costPerMin'] = costPerMin;
+    }
 
     const db = getDB();
     const users = db.collection('users');
-    const { ObjectId } = require('mongodb');
 
     const result = await users.findOneAndUpdate(
       { _id: new ObjectId(id), role: 'listener' },
@@ -195,7 +195,8 @@ const updateListener = async (req, res, next) => {
       { returnDocument: 'after' }
     );
 
-    if (!result) {
+    const updatedListener = result?.value ?? result;
+    if (!updatedListener) {
       return next(new AppError('Listener not found', 404));
     }
 
@@ -206,16 +207,16 @@ const updateListener = async (req, res, next) => {
       message: 'Listener updated successfully',
       data: {
         listener: {
-          id: result._id.toString(),
-          name: result.name,
-          email: result.email,
-          isAvailable: result.isAvailable,
-          totalCalls: result.listenerProfile?.totalCalls || 0,
-          totalMinutes: result.listenerProfile?.totalMinutes || 0,
-          rating: result.listenerProfile?.rating || 0,
-          specialties: result.listenerProfile?.specialties || [],
-          bio: result.listenerProfile?.bio || '',
-          costPerMin: result.listenerProfile?.costPerMin || 0,
+          id: updatedListener._id.toString(),
+          name: updatedListener.name,
+          email: updatedListener.email,
+          isAvailable: updatedListener.isAvailable,
+          totalCalls: updatedListener.listenerProfile?.totalCalls || 0,
+          totalMinutes: updatedListener.listenerProfile?.totalMinutes || 0,
+          rating: updatedListener.listenerProfile?.rating || 0,
+          specialties: updatedListener.listenerProfile?.specialties || [],
+          bio: updatedListener.listenerProfile?.bio || '',
+          costPerMin: updatedListener.listenerProfile?.costPerMin ?? 0,
         },
       },
     });

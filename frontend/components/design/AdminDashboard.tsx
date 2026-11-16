@@ -5,7 +5,7 @@ import { Logo, Wordmark, Avatar, type UserInfo } from './primitives';
 import { clearUser, getToken } from '@/lib/api';
 
 interface ListenerRow { _id: string; name: string; email: string; isAvailable: boolean; totalCalls: number; totalMinutes: number; rating: number; specialties: string[] | string; bio: string; costPerMin?: number; createdAt?: string; }
-interface TherapistRow { _id: string; name: string; email: string; title: string; rate: number; experience: string; rating: number; specialties: string[] | string; description: string; credentials: string; gender?: string; }
+interface TherapistRow { _id: string; name: string; email: string; title: string; rate: number; pricePerMin?: number; isDemo?: boolean; experience: string; rating: number; specialties: string[] | string; description: string; credentials: string; avatar?: string; gender?: string; }
 interface TranscriptSegment { id?: number; start: number | null; end: number | null; text: string; }
 interface TranscriptRow { id: string; sessionId: string; callId?: string | null; speaker: string; text: string; segments?: TranscriptSegment[]; confidence: number; processor: string; model?: string | null; audioPath?: string | null; createdAt: string; }
 interface ConversationTurn { speaker: string; start: number | null; end: number | null; text: string; }
@@ -30,6 +30,13 @@ const DEFAULT_AI: AISettings = {
 
 function normalizeId<T extends Record<string, unknown>>(obj: T): T & { _id: string } {
   return { ...obj, _id: (obj._id as string) || (obj.id as string) || '' };
+}
+
+function normalizeTherapist(obj: Record<string, unknown>): TherapistRow {
+  const storedRate = obj.pricePerMin ?? obj.rate;
+  const defaultRate = obj.isDemo === true ? 0 : 799;
+  const rate = storedRate === undefined || storedRate === null ? defaultRate : Number(storedRate);
+  return { ...normalizeId(obj), rate: Number.isFinite(rate) ? rate : defaultRate } as unknown as TherapistRow;
 }
 
 export function AdminDashboard({ user }: { user: UserInfo }) {
@@ -78,14 +85,14 @@ export function AdminDashboard({ user }: { user: UserInfo }) {
 
   useEffect(() => {
     const fetchWithAuth = (url: string) =>
-      fetch(url, { headers }).then(r => {
+      fetch(url, { headers, cache: 'no-store' }).then(r => {
         if (r.status === 401) { clearUser(); router.push('/auth/login'); return null; }
         return r.json();
       }).catch(() => null);
 
     Promise.all([
       fetchWithAuth(`${apiUrl}/api/admin/listeners`),
-      fetch(`${apiUrl}/api/therapists`, { headers }).then(r => r.json()).catch(() => null),
+      fetch(`${apiUrl}/api/therapists`, { headers, cache: 'no-store' }).then(r => r.json()).catch(() => null),
       fetchWithAuth(`${apiUrl}/api/admin/transcripts?limit=25`),
       fetch(`${apiUrl}/api/sarvam/settings`, { headers }).then(r => r.json()).catch(() => null),
       fetchWithAuth(`${apiUrl}/api/admin/stats`),
@@ -94,7 +101,7 @@ export function AdminDashboard({ user }: { user: UserInfo }) {
     ]).then(([l, t, tr, ai, s, cfg, rp]) => {
       if (!l && !s) return; // redirected to login
       const rawListeners: ListenerRow[] = (l?.data?.listeners || l?.data || []).map(normalizeId);
-      const rawTherapists: TherapistRow[] = (t?.data || []).map(normalizeId);
+      const rawTherapists: TherapistRow[] = (t?.data || []).map(normalizeTherapist);
       const rawTranscripts: TranscriptRow[] = (tr?.data?.transcripts || []).map((item: TranscriptRow) => ({ ...item }));
       setListeners(rawListeners);
       setTherapists(rawTherapists);
@@ -112,9 +119,38 @@ export function AdminDashboard({ user }: { user: UserInfo }) {
     });
   }, []);
 
+  // Keep provider records in this admin screen aligned with MongoDB if another
+  // admin changes them in a different tab or browser.
+  useEffect(() => {
+    let active = true;
+    const refreshProviders = async () => {
+      const providerHeaders = { Authorization: `Bearer ${token}` };
+      const [listenerResponse, therapistResponse] = await Promise.all([
+        fetch(`${apiUrl}/api/admin/listeners`, { headers: providerHeaders, cache: 'no-store' }).then(r => r.json()).catch(() => null),
+        fetch(`${apiUrl}/api/therapists`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+      ]);
+      if (!active) return;
+      if (listenerResponse?.success) setListeners((listenerResponse.data?.listeners || []).map(normalizeId));
+      if (therapistResponse?.success && Array.isArray(therapistResponse.data)) {
+        setTherapists(therapistResponse.data.map(normalizeTherapist));
+      }
+    };
+    const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refreshProviders(); };
+    const timer = window.setInterval(refreshProviders, 15000);
+    window.addEventListener('focus', refreshProviders);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshProviders);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [apiUrl, token]);
+
   const deleteListener = async (id: string) => {
     if (!confirm('Remove this listener? Their account will be deleted.')) return;
-    await fetch(`${apiUrl}/api/admin/listeners/${id}`, { method: 'DELETE', headers });
+    const res = await fetch(`${apiUrl}/api/admin/listeners/${id}`, { method: 'DELETE', headers }).then(r => r.json()).catch(() => null);
+    if (!res?.success) { showToast(res?.error || 'Could not remove listener'); return; }
     setListeners(prev => prev.filter(l => l._id !== id));
     showToast('Listener removed');
   };
@@ -123,24 +159,39 @@ export function AdminDashboard({ user }: { user: UserInfo }) {
     if (!lForm.name || !lForm.email) return;
     const isEdit = listenerModal?.mode === 'edit';
     const url = isEdit ? `${apiUrl}/api/admin/listeners/${listenerModal?.data?._id}` : `${apiUrl}/api/admin/listeners`;
+    const costPerMin = lForm.costPerMin.trim() === '' ? 0 : Number(lForm.costPerMin);
+    if (!Number.isFinite(costPerMin) || costPerMin < 0) {
+      showToast('Listener rate must be zero or greater');
+      return;
+    }
     const body = {
-      name: lForm.name,
-      email: lForm.email,
+      name: lForm.name.trim(),
+      email: lForm.email.trim().toLowerCase(),
       bio: lForm.bio,
       specialties: lForm.specialties.split(',').map(s => s.trim()).filter(Boolean),
-      costPerMin: parseFloat(lForm.costPerMin) || 0,
+      costPerMin,
     };
-    await fetch(url, { method: isEdit ? 'PUT' : 'POST', headers, body: JSON.stringify(body) }).catch(() => null);
-    // Refetch full list so costPerMin and all fields reflect DB state
-    const fresh = await fetch(`${apiUrl}/api/admin/listeners`, { headers }).then(r => r.json()).catch(() => null);
-    if (fresh) setListeners((fresh?.data?.listeners || fresh?.data || []).map(normalizeId));
+    const saved = await fetch(url, { method: isEdit ? 'PUT' : 'POST', headers, body: JSON.stringify(body) }).then(r => r.json()).catch(() => null);
+    if (!saved?.success || !saved?.data?.listener) {
+      showToast(saved?.error || 'Could not save listener changes');
+      return;
+    }
+    const savedListener = normalizeId(saved.data.listener as Record<string, unknown>) as unknown as ListenerRow;
+    setListeners(prev => isEdit
+      ? prev.map(listener => listener._id === savedListener._id ? { ...listener, ...savedListener } : listener)
+      : prev.some(listener => listener._id === savedListener._id) ? prev.map(listener => listener._id === savedListener._id ? { ...listener, ...savedListener } : listener) : [...prev, savedListener]);
+    // Re-read the canonical row so aggregate fields and all saved profile values
+    // match the database rather than only the form's optimistic values.
+    const fresh = await fetch(`${apiUrl}/api/admin/listeners`, { headers, cache: 'no-store' }).then(r => r.json()).catch(() => null);
+    if (fresh?.success) setListeners((fresh.data?.listeners || []).map(normalizeId));
     setListenerModal(null);
     showToast(isEdit ? 'Listener updated' : 'Listener added');
   };
 
   const deleteTherapist = async (id: string) => {
     if (!confirm('Remove this therapist? Their account will be deleted.')) return;
-    await fetch(`${apiUrl}/api/therapists/${id}`, { method: 'DELETE', headers });
+    const res = await fetch(`${apiUrl}/api/therapists/${id}`, { method: 'DELETE', headers }).then(r => r.json()).catch(() => null);
+    if (!res?.success) { showToast(res?.error || 'Could not remove therapist'); return; }
     setTherapists(prev => prev.filter(t => t._id !== id));
     showToast('Therapist removed');
   };
@@ -149,9 +200,18 @@ export function AdminDashboard({ user }: { user: UserInfo }) {
     if (!tForm.name || !tForm.email || !tForm.title) return;
     const isEdit = therapistModal?.mode === 'edit';
     const url = isEdit ? `${apiUrl}/api/therapists/${therapistModal?.data?._id}` : `${apiUrl}/api/therapists`;
-    const body = { ...tForm, specialties: tForm.specialties.split(',').map(s => s.trim()).filter(Boolean), pricePerMin: Number(tForm.rate) || 799 };
+    const sessionRate = Number(tForm.rate);
+    if (!Number.isFinite(sessionRate) || sessionRate < 0) {
+      showToast('Session price must be zero or more');
+      return;
+    }
+    const body = { ...tForm, name: tForm.name.trim(), email: tForm.email.trim().toLowerCase(), specialties: tForm.specialties.split(',').map(s => s.trim()).filter(Boolean), pricePerMin: sessionRate };
     const res = await fetch(url, { method: isEdit ? 'PUT' : 'POST', headers, body: JSON.stringify(body) }).then(r => r.json()).catch(() => null);
-    const saved = res?.data ? normalizeId(res.data) : null;
+    if (!res?.success || !res?.data) {
+      showToast(res?.error || 'Could not save therapist changes');
+      return;
+    }
+    const saved = res?.data ? normalizeTherapist(res.data) : null;
     if (saved) { setTherapists(prev => isEdit ? prev.map(t => t._id === saved._id ? { ...t, ...saved } as TherapistRow : t) : [...prev, saved as TherapistRow]); }
     setTherapistModal(null);
     showToast(isEdit ? 'Therapist updated' : 'Therapist added');
@@ -615,7 +675,7 @@ export function AdminDashboard({ user }: { user: UserInfo }) {
           <div style={{ animation: 'fadeUp 0.3s ease both' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
               <div>
-                <h2 className="serif" style={{ fontSize: 22, fontWeight: 400, margin: 0 }}>Licensed Therapists</h2>
+                <h2 className="serif" style={{ fontSize: 22, fontWeight: 400, margin: 0 }}>Therapist Profiles</h2>
                 <p style={{ fontSize: 13, color: 'var(--muted)', margin: '4px 0 0' }}>Manage therapist profiles and view appointment analytics</p>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -655,7 +715,7 @@ export function AdminDashboard({ user }: { user: UserInfo }) {
                           onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                           <td style={tdStyle}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <Avatar name={t.name} tone="peach" size={34} />
+                              <Avatar name={t.name} tone="peach" size={34} image={t.avatar} />
                               <div>
                                 <div style={{ fontWeight: 500, fontSize: 14 }}>{t.name}</div>
                                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>{t.title}</div>
@@ -668,13 +728,13 @@ export function AdminDashboard({ user }: { user: UserInfo }) {
                               {specs.length > 2 && <span style={{ ...tagStyle, background: 'rgba(130,100,180,0.1)', color: 'var(--ink-2)' }}>+{specs.length - 2}</span>}
                             </div>
                           </td>
-                          <td style={{ ...tdStyle, fontWeight: 500 }}>₹{t.rate || 799}/hr</td>
+                          <td style={{ ...tdStyle, fontWeight: 500 }}>₹{t.rate}/50 min</td>
                           <td style={{ ...tdStyle, color: 'var(--muted)', fontSize: 13 }}>{t.experience || '—'}</td>
                           <td style={tdStyle}>{t.rating ? <StarRating value={t.rating} /> : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
                           <td style={tdStyle}>
                             <div style={{ display: 'flex', gap: 6 }}>
                               <TblBtn label="Analytics" accent onClick={() => openTherapistAnalytics(t._id)} />
-                              <TblBtn label="Edit" onClick={() => { setTForm({ name: t.name, email: t.email, title: t.title || '', description: t.description || '', credentials: t.credentials || '', experience: t.experience || '', specialties: Array.isArray(t.specialties) ? t.specialties.join(', ') : (t.specialties || ''), gender: t.gender || 'female', rate: String(t.rate || 799), photoUrl: (t as TherapistRow & { photoUrl?: string }).photoUrl || '' }); setTherapistModal({ mode: 'edit', data: t }); }} />
+                              <TblBtn label="Edit" onClick={() => { setTForm({ name: t.name, email: t.email, title: t.title || '', description: t.description || '', credentials: t.credentials || '', experience: t.experience || '', specialties: Array.isArray(t.specialties) ? t.specialties.join(', ') : (t.specialties || ''), gender: t.gender || 'female', rate: String(t.rate), photoUrl: t.avatar || '' }); setTherapistModal({ mode: 'edit', data: t }); }} />
                               <TblBtn label="Remove" danger onClick={() => deleteTherapist(t._id)} />
                             </div>
                           </td>
@@ -901,7 +961,7 @@ export function AdminDashboard({ user }: { user: UserInfo }) {
             <Field label="Email Address *"><input type="email" style={inputStyle} value={tForm.email} onChange={e => setTForm(f => ({ ...f, email: e.target.value }))} placeholder="dr@email.com" disabled={therapistModal.mode === 'edit'} /></Field>
             <Field label="Experience"><input style={inputStyle} value={tForm.experience} onChange={e => setTForm(f => ({ ...f, experience: e.target.value }))} placeholder="5 years" /></Field>
             <Field label="Credentials"><input style={inputStyle} value={tForm.credentials} onChange={e => setTForm(f => ({ ...f, credentials: e.target.value }))} placeholder="M.Phil, RCI Licensed" /></Field>
-            <Field label="Rate (₹/hr)"><input type="number" style={inputStyle} value={tForm.rate} onChange={e => setTForm(f => ({ ...f, rate: e.target.value }))} placeholder="799" /></Field>
+            <Field label="Session price (₹/50 min)"><input type="number" min="0" style={inputStyle} value={tForm.rate} onChange={e => setTForm(f => ({ ...f, rate: e.target.value }))} placeholder="799" /></Field>
           </div>
           <Field label="Profile Photo URL">
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>

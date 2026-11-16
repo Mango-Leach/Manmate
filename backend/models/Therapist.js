@@ -46,12 +46,7 @@ class TherapistModel {
 
   async update(id, updates) {
     const collection = this.getCollection();
-    console.log(`[TherapistModel] Updating therapist ${id} with:`, updates);
     try {
-      // Check if it exists first
-      const existing = await collection.findOne({ _id: new ObjectId(id) });
-      console.log('[TherapistModel] Found existing before update:', existing);
-
       const result = await collection.findOneAndUpdate(
         { _id: new ObjectId(id) },
         {
@@ -62,14 +57,14 @@ class TherapistModel {
         },
         { returnDocument: 'after' }
       );
-      console.log('[TherapistModel] Update result:', result);
 
       // Handle different driver versions
       if (result && result.value) return result.value;
       if (result && result._id) return result; // If result is the doc itself
       return result; // Fallback
     } catch (e) {
-      console.error('[TherapistModel] Update error:', e);
+      // Avoid dumping MongoDB command context, which can include OAuth tokens.
+      console.error('[TherapistModel] Update error:', e.message);
       throw e;
     }
   }

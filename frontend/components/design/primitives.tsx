@@ -26,7 +26,7 @@ export const Icon = {
 // ── Avatar ─────────────────────────────────────────────────────────────────────
 type AvatarTone = 'sage' | 'lavender' | 'peach' | 'rose' | 'sky' | 'moss';
 
-export function Avatar({ name, tone = 'sage', size = 44 }: { name: string; tone?: AvatarTone; size?: number }) {
+export function Avatar({ name, tone = 'sage', size = 44, image }: { name: string; tone?: AvatarTone; size?: number; image?: string }) {
   const initials = name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
   const bgs: Record<AvatarTone, string> = {
     sage: 'linear-gradient(135deg,#B8CEBF 0%,#7D9B86 100%)',
@@ -44,8 +44,10 @@ export function Avatar({ name, tone = 'sage', size = 44 }: { name: string; tone?
       color: 'rgba(255,255,255,.95)',
       fontFamily: 'Newsreader, serif', fontSize: size * 0.38, fontWeight: 500,
       letterSpacing: 0.5, flexShrink: 0,
+      position: 'relative', overflow: 'hidden',
     }}>
       {initials}
+      {image && <img src={image} alt={name} loading="lazy" referrerPolicy="no-referrer" onError={e => { e.currentTarget.style.display = 'none'; }} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />}
     </div>
   );
 }
@@ -78,10 +80,10 @@ type ButtonTone = 'primary' | 'secondary' | 'ghost' | 'danger';
 type ButtonSize = 'sm' | 'md' | 'lg';
 
 export function Button({
-  children, tone = 'primary', size = 'md', onClick, style = {}, full = false,
+  children, tone = 'primary', size = 'md', onClick, style = {}, full = false, disabled = false,
 }: {
   children: React.ReactNode; tone?: ButtonTone; size?: ButtonSize;
-  onClick?: () => void; style?: React.CSSProperties; full?: boolean;
+  onClick?: () => void; style?: React.CSSProperties; full?: boolean; disabled?: boolean;
 }) {
   const sizes: Record<ButtonSize, { p: string; fs: number; r: number }> = {
     sm: { p: '7px 14px', fs: 13, r: 10 },
@@ -99,11 +101,13 @@ export function Button({
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       style={{
         padding: s.p, fontSize: s.fs, borderRadius: s.r,
         background: t.bg, color: t.c,
         border: `1px solid ${t.bd || 'transparent'}`,
-        cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
+        cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1,
+        display: 'inline-flex', alignItems: 'center',
         gap: 8, justifyContent: 'center', fontWeight: 500,
         width: full ? '100%' : undefined,
         transition: 'transform .12s, opacity .15s, background .2s',

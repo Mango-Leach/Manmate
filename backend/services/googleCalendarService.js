@@ -26,7 +26,7 @@ function loadCredentials() {
       client_id: process.env.GOOGLE_CLIENT_ID,
       client_secret: process.env.GOOGLE_CLIENT_SECRET,
       redirect_uris: [
-        process.env.GOOGLE_CALENDAR_REDIRECT_URI || 'http://localhost:3000'
+        process.env.GOOGLE_CALENDAR_REDIRECT_URI || 'http://localhost:3000/therapist'
       ]
     };
   }
@@ -45,6 +45,13 @@ class GoogleCalendarService {
   async initialize() {
     try {
       this.clientConfig = loadCredentials();
+
+      if (this.clientConfig && process.env.GOOGLE_CALENDAR_REDIRECT_URI) {
+        this.clientConfig = {
+          ...this.clientConfig,
+          redirect_uris: [process.env.GOOGLE_CALENDAR_REDIRECT_URI],
+        };
+      }
 
       if (!this.clientConfig) {
         logger.warn('Google OAuth credentials not configured — Google Calendar service disabled.');
@@ -167,11 +174,34 @@ class GoogleCalendarService {
         sendUpdates: 'none'
       });
 
-      const createdEvent = response.data;
-      const meetLink = createdEvent.hangoutLink ||
+      let createdEvent = response.data;
+      let meetLink = createdEvent.hangoutLink ||
         createdEvent.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri;
 
-      logger.info(`✅ Calendar event created with Meet link: ${meetLink}`);
+      // Google may return the event before Meet has finished provisioning the
+      // conference. Poll the event briefly while the create request is pending.
+      for (let attempt = 0; !meetLink && attempt < 5; attempt += 1) {
+        const conferenceStatus = createdEvent.conferenceData?.createRequest?.status?.statusCode;
+        if (conferenceStatus !== 'pending' && attempt > 0) break;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const refreshed = await calendar.events.get({ calendarId: 'primary', eventId: createdEvent.id });
+        createdEvent = refreshed.data;
+        meetLink = createdEvent.hangoutLink ||
+          createdEvent.conferenceData?.entryPoints?.find(ep => ep.entryPointType === 'video')?.uri;
+      }
+
+      if (!meetLink) {
+        const conferenceStatus = createdEvent.conferenceData?.createRequest?.status?.statusCode || 'not returned';
+        // Avoid leaving an unusable calendar event behind when Meet creation failed.
+        try {
+          await calendar.events.delete({ calendarId: 'primary', eventId: createdEvent.id, sendUpdates: 'none' });
+        } catch (cleanupError) {
+          logger.warn(`Could not remove calendar event after Meet link was unavailable: ${cleanupError.message}`);
+        }
+        throw new Error(`Google Calendar created the event but did not return a Meet link (conference status: ${conferenceStatus}).`);
+      }
+
+      logger.info(`✅ Calendar event created: ${createdEvent.id}; Meet link generated: ${Boolean(meetLink)}`);
 
       return {
         eventId: createdEvent.id,
@@ -180,11 +210,17 @@ class GoogleCalendarService {
         event: createdEvent
       };
     } catch (error) {
-      logger.error('Failed to create calendar event:', error.message);
-      if (error.code === 401) {
+      const status = error.response?.status || error.code || 'unknown';
+      const providerError = error.response?.data?.error;
+      const detail = providerError?.message || error.message || 'Unknown Google Calendar error';
+      const reasons = Array.isArray(providerError?.errors)
+        ? providerError.errors.map(item => item.reason).filter(Boolean).join(', ')
+        : '';
+      logger.error(`Failed to create calendar event (status=${status}${reasons ? `, reason=${reasons}` : ''}): ${detail}`);
+      if (Number(status) === 401) {
         logger.error('Google OAuth token expired or invalid. Therapist must reconnect their Google Calendar.');
       }
-      throw new Error(`Calendar event creation failed: ${error.message}`);
+      throw new Error(`Calendar event creation failed (status ${status}): ${detail}`);
     }
   }
 

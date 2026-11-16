@@ -10,8 +10,26 @@ export function CookieConsent() {
     // Unregister any stale Service Workers in development to prevent Webpack chunk mismatch
     if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then((registrations) => {
-        for (const registration of registrations) {
-          registration.unregister();
+        const hadController = Boolean(navigator.serviceWorker.controller);
+        const unregisterWorkers = Promise.all(registrations.map((registration) => registration.unregister()));
+
+        // An unregistered worker can still control this tab until navigation.
+        // Reload once so the browser requests the current dev chunks directly.
+        if (hadController && registrations.length > 0) {
+          const reloadKey = 'mannmate-dev-service-worker-reloaded';
+          try {
+            if (!sessionStorage.getItem(reloadKey)) {
+              sessionStorage.setItem(reloadKey, '1');
+              unregisterWorkers
+                .then(() => ('caches' in window ? caches.keys() : []))
+                .then((cacheNames) => Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName))))
+                .finally(() => window.location.reload());
+            } else {
+              sessionStorage.removeItem(reloadKey);
+            }
+          } catch {
+            // Browser storage can be disabled; unregistering still prevents future control.
+          }
         }
       });
     }

@@ -1,10 +1,21 @@
-const withPWA = require('next-pwa')({
+const path = require('path');
+const withPWA = require('next-pwa');
+
+const pwa = {
   dest: 'public',
   register: true,
   skipWaiting: true,
   disable: process.env.NODE_ENV === 'development',
   buildExcludes: [/middleware-manifest\.json$/],
   runtimeCaching: [
+    {
+      urlPattern: '/',
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'start-url',
+        networkTimeoutSeconds: 10,
+      },
+    },
     {
       urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
       handler: 'CacheFirst',
@@ -64,14 +75,14 @@ const withPWA = require('next-pwa')({
       },
     },
   ],
-});
+};
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  agentRules: false,
+  devIndicators: false,
   output: 'standalone',
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  outputFileTracingRoot: path.resolve(__dirname, '..'),
   images: {
     domains: [],
     formats: ["image/avif", "image/webp"]
@@ -84,7 +95,7 @@ const nextConfig = {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL
   },
   async headers() {
-    return [
+    const headers = [
       {
         source: "/:path*",
         headers: [
@@ -96,6 +107,15 @@ const nextConfig = {
           { key: "Referrer-Policy", value: "origin-when-cross-origin" }
         ]
       },
+    ];
+
+    // Long-lived immutable headers belong on production assets only. Applying
+    // them to Turbopack's changing development chunks can make the browser run
+    // stale client code against newer server-rendered markup.
+    if (process.env.NODE_ENV === 'development') return headers;
+
+    return [
+      ...headers,
       {
         source: "/_next/static/:path*",
         headers: [
@@ -112,4 +132,14 @@ const nextConfig = {
   }
 }
 
-module.exports = process.env.NODE_ENV === 'development' ? nextConfig : withPWA(nextConfig);
+if (process.env.NODE_ENV === 'development') {
+  module.exports = nextConfig;
+} else {
+  const pwaConfig = withPWA(nextConfig);
+  const applyPwaWebpack = pwaConfig.webpack;
+  pwaConfig.webpack = (config, options) => applyPwaWebpack(config, {
+    ...options,
+    config: { ...options.config, pwa },
+  });
+  module.exports = pwaConfig;
+}

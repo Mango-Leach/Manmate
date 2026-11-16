@@ -409,11 +409,12 @@ class EmailService {
       day: 'numeric'
     });
 
-    const isOneHour = reminderType === 'one_hour';
-    const reminderTitle = isOneHour ? '⏰ Reminder: Session in 1 Hour' : '🚨 Reminder: Session in 5 Minutes';
-    const reminderLine = isOneHour
-      ? 'Your therapy session starts in about 1 hour.'
-      : 'Your therapy session starts in about 5 minutes. Please join now.';
+    const reminderLabels = {
+      one_hour: { title: '⏰ Reminder: Session in 1 Hour', line: 'Your therapy session starts in about 1 hour.' },
+      thirty_minutes: { title: '⏰ Reminder: Session in 30 Minutes', line: 'Your therapy session starts in about 30 minutes. Your Google Meet link is below.' },
+      five_minutes: { title: '🚨 Reminder: Session in 5 Minutes', line: 'Your therapy session starts in about 5 minutes. Please join now.' }
+    };
+    const { title: reminderTitle, line: reminderLine } = reminderLabels[reminderType] || reminderLabels.five_minutes;
 
     const subject = `${reminderTitle} - StressReliefChat`;
     const html = `

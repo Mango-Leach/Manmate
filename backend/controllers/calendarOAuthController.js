@@ -26,6 +26,13 @@ try {
   }
 }
 
+// The therapist dashboard reads the OAuth callback parameters from /therapist.
+// Let the runtime setting override any redirect URI bundled in credential JSON
+// so the URI sent to Google matches the local dashboard callback exactly.
+if (client_id && process.env.GOOGLE_CALENDAR_REDIRECT_URI) {
+  redirect_uris = [process.env.GOOGLE_CALENDAR_REDIRECT_URI];
+}
+
 /**
  * Return 503 if Google credentials are not configured
  */
@@ -45,12 +52,18 @@ function generateOAuthUrl(therapistId) {
   const oauth2Client = new google.auth.OAuth2(
     client_id,
     client_secret,
-    redirect_uris[0]
+    redirect_uris[0] || 'http://localhost:3000/therapist'
   );
 
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
-    scope: ['https://www.googleapis.com/auth/calendar'],
+    // The callback also fetches the connected Google account's email to show
+    // which calendar was linked, so request the matching identity scopes.
+    scope: [
+      'https://www.googleapis.com/auth/calendar',
+      'openid',
+      'https://www.googleapis.com/auth/userinfo.email',
+    ],
     prompt: 'consent',
     state: therapistId
   });
@@ -136,12 +149,20 @@ exports.handleCallback = async (req, res) => {
     const oauth2Client = new google.auth.OAuth2(
       client_id,
       client_secret,
-      redirect_uris[0]
+      redirect_uris[0] || 'http://localhost:3000/therapist'
     );
 
     // Exchange authorization code for tokens
     const { tokens } = await oauth2Client.getToken(code);
     const refreshToken = tokens.refresh_token;
+
+    if (!tokens.access_token) {
+      logger.error('Calendar OAuth token exchange returned no access token');
+      return res.status(502).json({
+        success: false,
+        error: 'Google did not return an access token. Please reconnect and approve the requested access.'
+      });
+    }
 
     if (!refreshToken) {
       return res.status(400).json({
@@ -172,10 +193,10 @@ exports.handleCallback = async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Error handling OAuth callback:', error);
+    logger.error('Error handling OAuth callback:', error.response?.data || error.message || error);
     res.status(500).json({
       success: false,
-      error: 'Failed to connect Google Calendar. Please try again.'
+      error: error.response?.data?.error_description || error.response?.data?.error?.message || 'Failed to connect Google Calendar. Please try again.'
     });
   }
 };

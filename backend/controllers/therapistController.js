@@ -4,8 +4,11 @@ const logger = require('../utils/logger');
 const emailService = require('../services/emailService');
 const { generateOAuthUrl } = require('./calendarOAuthController');
 
+const DEFAULT_BOOKING_SLOTS = ['09:00', '10:00', '11:00', '12:00', '14:00', '15:00', '16:00', '17:00', '18:00'];
+
 exports.getTherapists = async (req, res, next) => {
   try {
+    res.set('Cache-Control', 'no-store');
     const therapists = await Therapist.findAll();
 
     // Map _id to id for frontend compatibility
@@ -26,7 +29,9 @@ exports.getTherapists = async (req, res, next) => {
 
 exports.addTherapist = async (req, res, next) => {
   try {
-    const { name, email, title, description, credentials, specialties, avatar, experience } = req.body;
+    const { name, title, description, credentials, specialties, experience, gender } = req.body;
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const avatar = req.body.avatar || req.body.photoUrl || '';
 
     if (!name || !title || !email) {
       return res.status(400).json({
@@ -34,23 +39,33 @@ exports.addTherapist = async (req, res, next) => {
         error: 'Please provide name, email, and title'
       });
     }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ success: false, error: 'Please provide a valid email address' });
+    }
 
-    // Create or upgrade user in users collection (same pattern as addListener)
+    const submittedRate = req.body.pricePerMin ?? req.body.rate;
+    const sessionRate = submittedRate === undefined ? 799 : Number(submittedRate);
+    if (!Number.isFinite(sessionRate) || sessionRate < 0) {
+      return res.status(400).json({ success: false, error: 'Session price must be a non-negative number' });
+    }
+
+    const existingProfile = await Therapist.findByEmail(email);
+    if (existingProfile) {
+      return res.status(409).json({ success: false, error: 'A therapist profile already exists for this email. Edit the existing profile instead.' });
+    }
+
+    // Create or upgrade user in users collection. If an earlier request created
+    // the user but failed before creating the profile, allow this retry to finish.
     const existingUser = await UserModel.findByEmail(email);
 
     if (existingUser) {
-      if (existingUser.role === 'therapist') {
-        return res.status(400).json({
-          success: false,
-          error: 'This user is already a therapist'
-        });
+      if (existingUser.role === 'admin') {
+        return res.status(409).json({ success: false, error: 'An admin account cannot be converted into a therapist account' });
       }
-      // Upgrade existing user to therapist role
-      await UserModel.update(email, {
-        role: 'therapist',
-        isAvailable: false,
-      });
-      logger.info(`User upgraded to therapist by admin: ${email}`);
+      if (existingUser.role !== 'therapist') {
+        await UserModel.update(email, { role: 'therapist', isAvailable: false });
+        logger.info(`User upgraded to therapist by admin: ${email}`);
+      }
     } else {
       // Create new user with therapist role
       await UserModel.create({
@@ -71,28 +86,32 @@ exports.addTherapist = async (req, res, next) => {
       description,
       credentials,
       specialties: Array.isArray(specialties) ? specialties : [],
-      pricePerMin: 799,
+      pricePerMin: sessionRate,
       avatar,
       experience,
+      gender,
       rating: 5.0
     });
+    if (existingUser) {
+      try {
+        await UserModel.update(email, { name });
+      } catch (userUpdateError) {
+        logger.warn(`Therapist profile created but user account name did not sync for ${email}:`, userUpdateError.message);
+      }
+    }
 
-    // Generate OAuth URL for Google Calendar connection
+    // Calendar onboarding is helpful but must not make an already-persisted
+    // therapist look like a failed create if OAuth or SMTP is unavailable.
     const therapistId = newTherapist._id.toString();
-    const oauthUrl = generateOAuthUrl(therapistId);
+    try {
+      const oauthUrl = generateOAuthUrl(therapistId);
+      emailService.sendTherapistWelcome({ therapistEmail: email, therapistName: name, therapistId, oauthUrl })
+        .catch(error => logger.error(`Failed to send therapist welcome email to ${email}:`, error));
+    } catch (oauthError) {
+      logger.warn(`Therapist saved, but calendar welcome link could not be generated for ${email}:`, oauthError.message);
+    }
 
-    // Send welcome email with OAuth link (non-blocking)
-    emailService.sendTherapistWelcome({
-      therapistEmail: email,
-      therapistName: name,
-      therapistId: therapistId,
-      oauthUrl: oauthUrl
-    }).catch(error => {
-      logger.error(`Failed to send welcome email to ${email}:`, error);
-      // Don't fail the request if email fails
-    });
-
-    logger.info(`✅ Therapist created and welcome email sent to: ${email}`);
+    logger.info(`✅ Therapist profile created: ${email}`);
 
     res.status(201).json({
       success: true,
@@ -107,8 +126,19 @@ exports.addTherapist = async (req, res, next) => {
 exports.updateTherapist = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
+    const updates = { ...req.body };
     delete updates._id; // Prevent updating _id
+    if (updates.photoUrl !== undefined && updates.avatar === undefined) updates.avatar = updates.photoUrl;
+    delete updates.photoUrl;
+    const submittedRate = updates.pricePerMin ?? updates.rate;
+    delete updates.rate;
+    if (submittedRate !== undefined) {
+      const sessionRate = Number(submittedRate);
+      if (!Number.isFinite(sessionRate) || sessionRate < 0) {
+        return res.status(400).json({ success: false, error: 'Session price must be a non-negative number' });
+      }
+      updates.pricePerMin = sessionRate;
+    }
 
     logger.info(`[Controller] Updating therapist ${id}`);
 
@@ -121,6 +151,14 @@ exports.updateTherapist = async (req, res, next) => {
         success: false,
         error: 'Therapist not found'
       });
+    }
+
+    if (updates.name && updatedTherapist.email) {
+      try {
+        await UserModel.update(updatedTherapist.email, { name: updatedTherapist.name });
+      } catch (userUpdateError) {
+        logger.warn(`Therapist profile name saved but user account name did not sync for ${updatedTherapist.email}:`, userUpdateError.message);
+      }
     }
 
     res.json({
@@ -194,7 +232,19 @@ exports.getTherapistAvailability = async (req, res, next) => {
 
     res.json({
       success: true,
-      data: { availability: therapist.availability || {} }
+      data: {
+        availability: therapist.isDemo || !therapist.email
+          ? (therapist.availability || {})
+          : Object.fromEntries(
+            ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+              .map(day => [
+                day,
+                Array.isArray(therapist.availability?.[day])
+                  ? therapist.availability[day]
+                  : DEFAULT_BOOKING_SLOTS
+              ])
+          )
+      }
     });
   } catch (error) {
     logger.error('Error fetching therapist availability:', error);
