@@ -26,6 +26,8 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      - key: ELASTIC_EMAIL_API_KEY
+        sync: false # Elastic Email API key with SendHttp access
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT

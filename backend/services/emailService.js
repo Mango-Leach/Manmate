@@ -1,13 +1,22 @@
 const nodemailer = require('nodemailer');
+const axios = require('axios');
 const logger = require('../utils/logger');
 
 class EmailService {
   constructor() {
     this.transporter = null;
+    this.elasticEmailApiKey = process.env.ELASTIC_EMAIL_API_KEY?.trim() || null;
     this.initialize();
   }
 
   initialize() {
+    // Elastic Email's REST API uses HTTPS, which works on Render free instances
+    // where outbound SMTP ports are blocked. Keep SMTP available for local use.
+    if (this.elasticEmailApiKey) {
+      logger.info('Email service initialized — Elastic Email API configured');
+      return;
+    }
+
     const port = parseInt(process.env.SMTP_PORT || '587');
     const isSSL = port === 465;
 
@@ -56,6 +65,36 @@ class EmailService {
 
   async sendEmail({ to, subject, html, text }) {
     try {
+      if (this.elasticEmailApiKey) {
+        const from = process.env.EMAIL_FROM;
+        if (!from) {
+          throw new Error('EMAIL_FROM must be set to a verified Elastic Email sender');
+        }
+
+        const body = [];
+        if (html) body.push({ ContentType: 'HTML', Content: html, Charset: 'utf-8' });
+        if (text) body.push({ ContentType: 'PlainText', Content: text, Charset: 'utf-8' });
+
+        const response = await axios.post('https://api.elasticemail.com/v4/emails/transactional', {
+          Recipients: { To: [to] },
+          Content: {
+            From: from,
+            Subject: subject,
+            Body: body,
+          },
+        }, {
+          headers: {
+            'X-ElasticEmail-ApiKey': this.elasticEmailApiKey,
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        });
+
+        const messageId = response.data?.MessageID || response.data?.TransactionID || 'accepted';
+        logger.info(`Email accepted by Elastic Email for ${to}: ${messageId}`);
+        return { success: true, messageId };
+      }
+
       if (!this.transporter) {
         // In development, just log the email
         logger.info('EMAIL (not sent - no transporter):', {
@@ -78,7 +117,13 @@ class EmailService {
       logger.info(`Email sent to ${to}: ${info.messageId}`);
       return { success: true, messageId: info.messageId };
     } catch (error) {
-      logger.error('Failed to send email:', error);
+      // Avoid logging Axios request config, which contains the API key header.
+      if (this.elasticEmailApiKey) {
+        const providerMessage = error.response?.data?.Error || error.response?.data?.message || error.message;
+        logger.error(`Elastic Email API send failed (${error.response?.status || 'network'}): ${providerMessage}`);
+      } else {
+        logger.error('Failed to send email:', error);
+      }
       throw error;
     }
   }
